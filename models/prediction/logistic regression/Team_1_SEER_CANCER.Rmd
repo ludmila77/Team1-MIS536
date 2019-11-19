@@ -1,0 +1,117 @@
+---
+title: "CLASSIFYING SEVERITY OF COLORECTAL CANCER"
+
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+### Submitted by: Team-1 (Ajinkya Koshti, Kavita Jain, Ludmila Scott, Pallabi Chatterjee, Tyler Kutz) 
+### Professor: Dr.Mohammadmahdi Moqri
+
+### Goal
+
+Predict the grade of Colorectal Cancer for new cases by building a model based on Logistic Regression.
+
+The Surveillance, Epidemiology, and End Results (SEER) Program of the National Cancer Institute (NCI) collects and publishes cancer data through a coordinated system of strategically placed cancer registries which cover near 30% of the USA population. Currently there are 18 SEER registries in the USA.
+
+#### Data source
+https://seer.cancer.gov/data/access.html
+
+
+#### Setup
+Libraries loaded here
+```{r message = FALSE}
+library(forecast)
+library(caret)
+library(e1071)
+library(fastDummies)
+library(tidyr)
+library(dplyr)
+```
+
+#### Load & create weighted samples of the data
+```{r}
+datain <- read.csv("COLRECT-decoded.csv")
+
+data <- datain
+data <- data[!(data$GRADE=="Undetermined"),] #removes undetermined grade
+
+#Weighted sampling on GRADE
+data <- data %>% drop_na()
+data <- data %>% group_by(data$GRADE) %>% sample_n(13000)
+table(data$GRADE)
+
+#Ungrouping GRADES
+data <- data %>% ungroup()
+```
+
+#### Remove undetermined grade & group variables into two categories (i.e. Grade I & II as 0 and Grade III & IV as 1)
+```{r}
+data$response <- ifelse(data$GRADE == "Grade I" | data$GRADE == "Grade II", 0, 1)
+table(data$response)
+```
+
+#### Create N-1 dummy variables and remove the original categorical variables that have been transformed
+```{r}
+dummy = dummy_cols(data,select_columns=c("REG",'SEX','SEQ_NUM','MDXRECMP','PRIMSITE','LATERAL','BEHO3V','HISTO3V','DX_CONF',"REPT_SRC",'RECNOREC','ICCC3WHO',"ICCC3WHO",'HISTREC','RAC_RECA','FIRSTPRM','IHSLINK'),remove_most_frequent_dummy = TRUE,ignore_na=TRUE)
+data = dummy[,-c(1,2,4:22)] 
+```
+
+#### Partition into training and validation data
+```{r}
+set.seed(2)
+train.index <- sample(c(1:dim(data)[1]), dim(data)[1]*0.6)  
+train.df <- data[train.index, ]
+valid.df <- data[-train.index, ]
+```
+#### Run the initial logistical regression, and then summarize and review significant variables
+```{r}
+logit.reg <- glm(response ~ ., data = train.df, family = "binomial") 
+summary(logit.reg)
+```
+
+#### Create an updated data set with only the significant variables
+```{r}
+model2 = train.df[,c('AGE_DX','REG_Alaska','REG_Greater California','REG_Hawaii','REG_Iowa','REG_Kentucky','REG_Louisiana','REG_Massachusetts','REG_New Mexico','REG_Utah','SEX_Male','SEQ_NUM_1','SEQ_NUM_2','SEQ_NUM_4','SEQ_NUM_3','SEQ_NUM_5','PRIMSITE_C181','PRIMSITE_C184','PRIMSITE_C185','PRIMSITE_C186','PRIMSITE_C187','PRIMSITE_C188','PRIMSITE_C189','PRIMSITE_C199','BEHO3V_Carcinoma in situ','HISTO3V_8240','HISTO3V_8263','HISTO3V_8210','HISTO3V_8480','HISTO3V_8261','HISTO3V_8246','HISTO3V_8244','HISTO3V_8481','HISTO3V_8010','HISTO3V_8070','HISTO3V_8936','HISTO3V_8490','HISTO3V_8000','HISTO3V_8890','HISTO3V_8255','HISTO3V_8013','HISTO3V_8041','HISTO3V_8510','HISTO3V_8574','DX_CONF_2','REPT_SRC_8',"RECNOREC_4",'RECNOREC_5','response')]
+```
+
+#### Create a new regression model with only significant variables and review the updated model
+```{r}
+logit.reg <- glm(response ~ ., data = model2, family = "binomial")
+options(scipen=999) # disable scientific tonationtion (e)
+summary(logit.reg)
+```
+
+#### Create a 2nd updated data set with the updated significant variables
+```{r}
+model3 = train.df[,c('AGE_DX','REG_Greater California','REG_Hawaii','REG_Iowa','REG_Kentucky','REG_Louisiana','REG_Massachusetts','REG_New Mexico','REG_Utah','SEX_Male','SEQ_NUM_1','PRIMSITE_C181','PRIMSITE_C185','PRIMSITE_C186','PRIMSITE_C187','PRIMSITE_C188','PRIMSITE_C199','BEHO3V_Carcinoma in situ','HISTO3V_8240','HISTO3V_8263','HISTO3V_8210','HISTO3V_8480','HISTO3V_8261','HISTO3V_8246','HISTO3V_8244','HISTO3V_8481','HISTO3V_8010','HISTO3V_8070','HISTO3V_8936','HISTO3V_8490','HISTO3V_8000','HISTO3V_8890','HISTO3V_8255','HISTO3V_8041','HISTO3V_8574','REPT_SRC_8','response')]
+```
+
+
+#### Create a final regression model with only significant variables and review the updated model
+```{r}
+logit.reg <- glm(response ~ ., data = model3, family = "binomial")
+options(scipen=999) # disable scientific tonationtion (e)
+summary(logit.reg)
+```
+
+
+
+#### Create the predicted set from the updated model and get accuracy measures 
+```{r}
+predicted<- predict(logit.reg,valid.df,type= "response")
+accuracy(predicted,valid.df$response)
+
+#Make the predicted variable a factor of 2 levels
+predicted =ifelse(predicted<.5,0,1)
+predicted = factor(predicted)
+
+```
+
+#### Create a confusion matrix to get predictive accuracy
+```{r}
+confusionMatrix(predicted,as.factor(valid.df$response))
+```
+
